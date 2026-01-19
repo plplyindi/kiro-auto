@@ -1,4 +1,4 @@
-name: Kiro 自动化任务
+name: Claude Code 自动化任务
 
 on:
   # 每天下午5点运行 (北京时间 17:00 = UTC 09:00)
@@ -9,112 +9,112 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-kiro-tasks:
+  run-claude-tasks:
     runs-on: ubuntu-latest
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 Kiro CLI
+      - name: 安装 Claude Code CLI
         run: |
-          echo "开始安装 Kiro CLI..."
-          curl -fsSL https://cli.kiro.dev/install | bash
-          echo "$HOME/.kiro/bin" >> $GITHUB_PATH
+          echo "开始安装 Claude Code CLI..."
+          curl -fsSL https://raw.githubusercontent.com/anthropics/anthropic-quickstarts/main/claude-code/install.sh | bash
+          echo "$HOME/.claude/bin" >> $GITHUB_PATH
 
-      - name: 验证 Kiro CLI 安装
+      - name: 验证 Claude Code 安装
         run: |
-          export PATH="$HOME/.kiro/bin:$PATH"
-          kiro-cli --version
+          export PATH="$HOME/.claude/bin:$PATH"
+          claude-code --version
 
-      - name: 配置 Kiro 认证
+      - name: 执行 Claude Code 任务（带重试）
         env:
-          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
-        run: |
-          export PATH="$HOME/.kiro/bin:$PATH"
-          # 使用环境变量进行认证
-          echo "配置认证..."
-
-      - name: 执行 Kiro 任务（带重试）
-        env:
-          MAX_RETRIES: 5
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MAX_RETRIES: 3
           RETRY_DELAY: 10
         run: |
-          export PATH="$HOME/.kiro/bin:$PATH"
+          export PATH="$HOME/.claude/bin:$PATH"
 
           echo "========================================="
-          echo "   Kiro 自动化任务开始"
+          echo "   Claude Code 自动化任务开始"
           echo "========================================="
           echo "北京时间: $(TZ='Asia/Shanghai' date)"
           echo "UTC时间: $(date)"
-          echo
+          echo ""
+
+          # 检查任务文件
+          if [ ! -f ".kiro/specs/tasks.md" ]; then
+            echo "❌ 错误：找不到任务文件 .kiro/specs/tasks.md"
+            exit 1
+          fi
+
+          echo "📋 任务文件内容："
+          cat .kiro/specs/tasks.md
+          echo ""
+          echo "========================================="
+          echo ""
 
           RETRY_COUNT=0
           SUCCESS=false
 
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             RETRY_COUNT=$((RETRY_COUNT + 1))
-            echo "[尝试 $RETRY_COUNT/$MAX_RETRIES]"
-            echo
+            echo "🚀 [尝试 $RETRY_COUNT/$MAX_RETRIES]"
+            echo ""
 
-            # 读取任务文件
-            if [ -f ".kiro/specs/tasks.md" ]; then
-              TASK_CONTENT=$(cat .kiro/specs/tasks.md)
-
-              # 执行任务
-              if kiro-cli chat --non-interactive "请执行以下任务：
-
-          $TASK_CONTENT
-
-          请逐个完成所有任务。"; then
-                echo
-                echo "✅ 执行成功！"
-                SUCCESS=true
-                break
-              else
-                echo "❌ 执行失败"
-                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                  echo "等待 $RETRY_DELAY 秒后重试..."
-                  sleep $RETRY_DELAY
-                fi
-              fi
+            # 执行 Claude Code
+            if claude-code chat --non-interactive "$(cat .kiro/specs/tasks.md)"; then
+              echo ""
+              echo "✅ 执行成功！"
+              SUCCESS=true
+              break
             else
-              echo "❌ 错误：找不到任务文件 .kiro/specs/tasks.md"
-              exit 1
+              EXIT_CODE=$?
+              echo ""
+              echo "❌ 执行失败 (错误码: $EXIT_CODE)"
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⏳ 等待 $RETRY_DELAY 秒后重试..."
+                sleep $RETRY_DELAY
+                echo ""
+              fi
             fi
           done
 
-          echo
+          echo ""
           echo "========================================="
           if [ "$SUCCESS" = true ]; then
             echo "   ✅ 任务完成"
+            echo "========================================="
+            echo "结束时间: $(TZ='Asia/Shanghai' date)"
+            exit 0
           else
             echo "   ❌ 任务失败（已重试 $MAX_RETRIES 次）"
+            echo "========================================="
+            echo "结束时间: $(TZ='Asia/Shanghai' date)"
             exit 1
           fi
-          echo "========================================="
-          echo "结束时间: $(TZ='Asia/Shanghai' date)"
 
       - name: 上传任务结果
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kiro-results-${{ github.run_number }}
+          name: claude-results-${{ github.run_number }}
           path: |
             *.txt
             *.log
+            *.md
           retention-days: 7
 
       - name: 发送通知（成功）
         if: success()
         run: |
-          echo "✅ 任务执行成功！"
+          echo "✅ Claude Code 任务执行成功！"
           echo "运行编号: ${{ github.run_number }}"
-          echo "可以在 Actions 标签页查看详细日志"
+          echo "完成时间: $(TZ='Asia/Shanghai' date)"
 
       - name: 发送通知（失败）
         if: failure()
         run: |
-          echo "❌ 任务执行失败！"
+          echo "❌ Claude Code 任务执行失败！"
           echo "运行编号: ${{ github.run_number }}"
           echo "请检查 Actions 日志"
