@@ -25,7 +25,7 @@ jobs:
       - name: 验证 Kiro CLI 安装
         run: |
           export PATH="$HOME/.kiro/bin:$PATH"
-          kiro --version
+          kiro-cli --version
 
       - name: 配置 Kiro 认证
         env:
@@ -62,7 +62,7 @@ jobs:
               TASK_CONTENT=$(cat .kiro/specs/tasks.md)
 
               # 执行任务
-              if kiro chat --non-interactive "请执行以下任务：
+              if kiro-cli chat --non-interactive "请执行以下任务：
 
           $TASK_CONTENT
 
