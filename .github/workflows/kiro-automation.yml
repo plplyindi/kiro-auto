@@ -28,9 +28,52 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           claude --version
 
-      - name: 执行 Claude Code 任务（带重试）
+      - name: 配置 Claude Code
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+        run: |
+          echo "配置 Claude Code..."
+
+          # 创建配置目录
+          mkdir -p ~/.claude
+
+          # 1. 创建 settings.json
+          cat > ~/.claude/settings.json << 'EOF'
+          {
+            "env": {
+              "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}",
+              "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+            }
+          }
+          EOF
+
+          # 替换环境变量
+          sed -i "s|\${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|g" ~/.claude/settings.json
+          sed -i "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY}|g" ~/.claude/settings.json
+
+          # 2. 创建 config.json
+          cat > ~/.claude/config.json << EOF
+          {
+            "primaryApiKey": "${ANTHROPIC_API_KEY}"
+          }
+          EOF
+
+          # 3. 创建 .claude.json
+          cat > ~/.claude.json << 'EOF'
+          {
+            "hasCompletedOnboarding": true
+          }
+          EOF
+
+          echo "✅ Claude Code 配置完成"
+          echo "配置文件："
+          echo "  - ~/.claude/settings.json"
+          echo "  - ~/.claude/config.json"
+          echo "  - ~/.claude.json"
+
+      - name: 执行 Claude Code 任务（带重试）
+        env:
           MAX_RETRIES: 3
           RETRY_DELAY: 10
         run: |
