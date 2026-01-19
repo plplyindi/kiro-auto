@@ -63,8 +63,8 @@ jobs:
             echo "🚀 [尝试 $RETRY_COUNT/$MAX_RETRIES]"
             echo ""
 
-            # 执行 Claude Code
-            if claude chat --non-interactive "$(cat .kiro/specs/tasks.md)"; then
+            # 执行 Claude Code（-p 表示 print/非交互模式）
+            if claude -p "$(cat .kiro/specs/tasks.md)"; then
               echo ""
               echo "✅ 执行成功！"
               SUCCESS=true
