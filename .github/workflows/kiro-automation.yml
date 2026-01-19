@@ -1,9 +1,9 @@
-name: Claude Code 自动化任务
+name: Claude Code 技术文章分析
 
 on:
-  # 每天下午5点运行 (北京时间 17:00 = UTC 09:00)
+  # 每小时运行一次
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 * * * *'
 
   # 也可以手动触发
   workflow_dispatch:
