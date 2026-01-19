@@ -1,0 +1,29 @@
+# Kiro 相关
+*.log
+.kiro-checkpoint
+kiro-execution.log
+
+# 任务生成的临时文件
+*.txt
+!.kiro/**/*.txt
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境变量
+.env
+.env.local
+
+# Node modules (如果有)
+node_modules/
+
+# Python (如果有)
+__pycache__/
+*.pyc
