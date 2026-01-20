@@ -149,16 +149,65 @@ jobs:
             *.md
           retention-days: 7
 
-      - name: 发送通知（成功）
+      - name: 发送邮件通知（成功）
         if: success()
-        run: |
-          echo "✅ Claude Code 任务执行成功！"
-          echo "运行编号: ${{ github.run_number }}"
-          echo "完成时间: $(TZ='Asia/Shanghai' date)"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "✅ 技术文章分析完成 - 运行 #${{ github.run_number }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: Claude Code 技术文章分析系统
+          body: |
+            技术文章分析任务执行成功！
 
-      - name: 发送通知（失败）
+            📊 运行信息：
+            - 运行编号: #${{ github.run_number }}
+            - 完成时间: ${{ github.event.head_commit.timestamp }}
+            - 仓库: ${{ github.repository }}
+
+            📄 查看详情：
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            📦 下载分析报告：
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts
+
+            💡 提示：
+            滚动到页面底部的 "Artifacts" 部分下载完整的分析报告。
+
+            ---
+            此邮件由 GitHub Actions 自动发送
+
+      - name: 发送邮件通知（失败）
         if: failure()
-        run: |
-          echo "❌ Claude Code 任务执行失败！"
-          echo "运行编号: ${{ github.run_number }}"
-          echo "请检查 Actions 日志"
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "❌ 技术文章分析失败 - 运行 #${{ github.run_number }}"
+          to: ${{ secrets.MAIL_TO }}
+          from: Claude Code 技术文章分析系统
+          body: |
+            技术文章分析任务执行失败！
+
+            ⚠️ 运行信息：
+            - 运行编号: #${{ github.run_number }}
+            - 失败时间: ${{ github.event.head_commit.timestamp }}
+            - 仓库: ${{ github.repository }}
+
+            🔍 查看错误日志：
+            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            可能的原因：
+            - API 配额用完
+            - 网络连接问题
+            - 文章格式无法解析
+
+            请检查 Actions 日志了解详细错误信息。
+
+            ---
+            此邮件由 GitHub Actions 自动发送
