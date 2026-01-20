@@ -16,29 +16,61 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装Python依赖
+        run: |
+          pip install requests
+
+      - name: 从邮箱获取微信文章链接
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        run: |
+          echo "📧 开始从QQ邮箱获取微信文章链接..."
+          python scripts/email_fetcher.py
+
+      - name: 爬取微信文章内容
+        run: |
+          echo "🕷️ 开始爬取微信文章内容..."
+          python scripts/article_scraper.py
+
+      - name: 检查是否有新文章
+        id: check_articles
+        run: |
+          if [ -f "articles_content.json" ] && [ -s "articles_content.json" ]; then
+            echo "has_articles=true" >> $GITHUB_OUTPUT
+            echo "✅ 发现文章内容"
+          else
+            echo "has_articles=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  没有文章内容"
+          fi
+
       - name: 安装 Claude Code CLI
+        if: steps.check_articles.outputs.has_articles == 'true'
         run: |
           echo "开始安装 Claude Code CLI..."
           curl -fsSL https://claude.ai/install.sh | bash
-          # 添加到 PATH
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: 验证 Claude Code 安装
+        if: steps.check_articles.outputs.has_articles == 'true'
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           claude --version
 
       - name: 配置 Claude Code
+        if: steps.check_articles.outputs.has_articles == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         run: |
           echo "配置 Claude Code..."
-
-          # 创建配置目录
           mkdir -p ~/.claude
 
-          # 1. 创建 settings.json
           cat > ~/.claude/settings.json << 'EOFINNER'
           {
             "env": {
@@ -48,18 +80,15 @@ jobs:
           }
           EOFINNER
 
-          # 替换环境变量
           sed -i "s|\${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|g" ~/.claude/settings.json
           sed -i "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY}|g" ~/.claude/settings.json
 
-          # 2. 创建 config.json
           cat > ~/.claude/config.json << EOFINNER
           {
             "primaryApiKey": "${ANTHROPIC_API_KEY}"
           }
           EOFINNER
 
-          # 3. 创建 .claude.json
           cat > ~/.claude.json << 'EOFINNER'
           {
             "hasCompletedOnboarding": true
@@ -67,12 +96,9 @@ jobs:
           EOFINNER
 
           echo "✅ Claude Code 配置完成"
-          echo "配置文件："
-          echo "  - ~/.claude/settings.json"
-          echo "  - ~/.claude/config.json"
-          echo "  - ~/.claude.json"
 
-      - name: 执行 Claude Code 任务（带重试）
+      - name: 用Claude分析文章（带重试）
+        if: steps.check_articles.outputs.has_articles == 'true'
         env:
           MAX_RETRIES: 3
           RETRY_DELAY: 10
@@ -80,20 +106,55 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
 
           echo "========================================="
-          echo "   Claude Code 自动化任务开始"
+          echo "   Claude Code 文章分析任务开始"
           echo "========================================="
           echo "北京时间: $(TZ='Asia/Shanghai' date)"
-          echo "UTC时间: $(date)"
           echo ""
 
-          # 检查任务文件
-          if [ ! -f ".kiro/specs/tasks.md" ]; then
-            echo "❌ 错误：找不到任务文件 .kiro/specs/tasks.md"
-            exit 1
-          fi
+          # 创建分析任务提示词
+          cat > analysis_prompt.txt << 'EOFPROMPT'
+          请分析 articles_content.json 文件中的微信公众号文章，并生成一份详细的分析报告。
 
-          echo "📋 任务文件内容："
-          cat .kiro/specs/tasks.md
+          分析要求：
+          1. 阅读所有文章内容
+          2. 总结每篇文章的核心观点和关键信息
+          3. 识别文章的主题分类（技术、产品、行业动态等）
+          4. 提取有价值的技术知识点或见解
+          5. 如果有多篇文章，找出它们之间的关联性
+
+          请将分析结果保存到 articles_analysis.md 文件中，格式如下：
+
+          # 微信公众号文章分析报告
+
+          生成时间: [当前时间]
+
+          ## 📊 总体概况
+          - 文章总数
+          - 主题分布
+          - 时间跨度
+
+          ## 📝 文章详细分析
+
+          ### [文章标题1]
+          - 作者: 
+          - 发布时间:
+          - 主题分类:
+          - 核心观点:
+          - 关键信息:
+          - 技术要点:
+
+          [对每篇文章重复以上格式]
+
+          ## 💡 综合洞察
+          - 趋势分析
+          - 重点关注
+          - 行动建议
+
+          请开始分析。
+          EOFPROMPT
+
+          echo "📋 分析任务："
+          cat analysis_prompt.txt
           echo ""
           echo "========================================="
           echo ""
@@ -106,16 +167,15 @@ jobs:
             echo "🚀 [尝试 $RETRY_COUNT/$MAX_RETRIES]"
             echo ""
 
-            # 执行 Claude Code（-p 表示 print/非交互模式）
-            if claude -p "$(cat .kiro/specs/tasks.md)"; then
+            if claude -p "$(cat analysis_prompt.txt)"; then
               echo ""
-              echo "✅ 执行成功！"
+              echo "✅ 分析成功！"
               SUCCESS=true
               break
             else
               EXIT_CODE=$?
               echo ""
-              echo "❌ 执行失败 (错误码: $EXIT_CODE)"
+              echo "❌ 分析失败 (错误码: $EXIT_CODE)"
               if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
                 echo "⏳ 等待 $RETRY_DELAY 秒后重试..."
                 sleep $RETRY_DELAY
@@ -129,13 +189,27 @@ jobs:
           if [ "$SUCCESS" = true ]; then
             echo "   ✅ 任务完成"
             echo "========================================="
-            echo "结束时间: $(TZ='Asia/Shanghai' date)"
             exit 0
           else
             echo "   ❌ 任务失败（已重试 $MAX_RETRIES 次）"
             echo "========================================="
-            echo "结束时间: $(TZ='Asia/Shanghai' date)"
             exit 1
+          fi
+
+      - name: 提交分析结果到仓库
+        if: steps.check_articles.outputs.has_articles == 'true'
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+          git add -A
+          
+          if git diff --staged --quiet; then
+            echo "ℹ️  没有变化需要提交"
+          else
+            git commit -m "📊 自动更新微信文章分析 - $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M')"
+            git push
+            echo "✅ 已提交分析结果到仓库"
           fi
 
       - name: 上传任务结果
@@ -144,32 +218,35 @@ jobs:
         with:
           name: claude-results-${{ github.run_number }}
           path: |
-            *.txt
+            articles_*.json
+            articles_*.md
+            articles_*.txt
             *.log
-            *.md
-          retention-days: 7
+          retention-days: 30
 
       - name: 输出通知信息（成功）
         if: success()
         run: |
-          echo "✅ 技术文章分析完成！"
+          echo "✅ 微信文章分析完成！"
           echo "运行编号: #${{ github.run_number }}"
           echo "完成时间: $(TZ='Asia/Shanghai' date)"
           echo ""
-          echo "📊 查看详情："
+          
+          if [ -f "articles_analysis.md" ]; then
+            echo "📊 生成的分析报告："
+            echo "---"
+            head -50 articles_analysis.md
+            echo "---"
+          fi
+          
+          echo ""
+          echo "🔗 查看完整结果："
           echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo ""
-          echo "📦 下载分析报告："
-          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
-          echo ""
-          echo "💡 通知方式："
-          echo "1. GitHub 网页通知（如果开启了 Watch）"
-          echo "2. 访问 Actions 页面查看最新结果"
 
       - name: 输出通知信息（失败）
         if: failure()
         run: |
-          echo "❌ 技术文章分析失败！"
+          echo "❌ 微信文章分析失败！"
           echo "运行编号: #${{ github.run_number }}"
           echo "失败时间: $(TZ='Asia/Shanghai' date)"
           echo ""
