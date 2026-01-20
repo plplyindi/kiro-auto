@@ -1,9 +1,9 @@
 name: Claude Code 技术文章分析
 
 on:
-  # 每小时运行一次
+  # 每天运行一次 (北京时间下午5点 = UTC 09:00)
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 9 * * *'
 
   # 也可以手动触发
   workflow_dispatch:
@@ -149,65 +149,29 @@ jobs:
             *.md
           retention-days: 7
 
-      - name: 发送邮件通知（成功）
+      - name: 输出通知信息（成功）
         if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.qq.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "✅ 技术文章分析完成 - 运行 #${{ github.run_number }}"
-          to: ${{ secrets.MAIL_TO }}
-          from: Claude Code 技术文章分析系统
-          body: |
-            技术文章分析任务执行成功！
+        run: |
+          echo "✅ 技术文章分析完成！"
+          echo "运行编号: #${{ github.run_number }}"
+          echo "完成时间: $(TZ='Asia/Shanghai' date)"
+          echo ""
+          echo "📊 查看详情："
+          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          echo "📦 下载分析报告："
+          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+          echo ""
+          echo "💡 通知方式："
+          echo "1. GitHub 网页通知（如果开启了 Watch）"
+          echo "2. 访问 Actions 页面查看最新结果"
 
-            📊 运行信息：
-            - 运行编号: #${{ github.run_number }}
-            - 完成时间: ${{ github.event.head_commit.timestamp }}
-            - 仓库: ${{ github.repository }}
-
-            📄 查看详情：
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            📦 下载分析报告：
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts
-
-            💡 提示：
-            滚动到页面底部的 "Artifacts" 部分下载完整的分析报告。
-
-            ---
-            此邮件由 GitHub Actions 自动发送
-
-      - name: 发送邮件通知（失败）
+      - name: 输出通知信息（失败）
         if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.qq.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "❌ 技术文章分析失败 - 运行 #${{ github.run_number }}"
-          to: ${{ secrets.MAIL_TO }}
-          from: Claude Code 技术文章分析系统
-          body: |
-            技术文章分析任务执行失败！
-
-            ⚠️ 运行信息：
-            - 运行编号: #${{ github.run_number }}
-            - 失败时间: ${{ github.event.head_commit.timestamp }}
-            - 仓库: ${{ github.repository }}
-
-            🔍 查看错误日志：
-            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            可能的原因：
-            - API 配额用完
-            - 网络连接问题
-            - 文章格式无法解析
-
-            请检查 Actions 日志了解详细错误信息。
-
-            ---
-            此邮件由 GitHub Actions 自动发送
+        run: |
+          echo "❌ 技术文章分析失败！"
+          echo "运行编号: #${{ github.run_number }}"
+          echo "失败时间: $(TZ='Asia/Shanghai' date)"
+          echo ""
+          echo "🔍 查看错误日志："
+          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
