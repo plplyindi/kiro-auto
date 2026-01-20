@@ -1,9 +1,9 @@
 name: Claude Code 技术文章分析
 
 on:
-  # 每天运行一次 (北京时间下午5点 = UTC 09:00)
+  # 每天北京时间早上4点运行 (UTC 20:00 = 北京时间次日 04:00)
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 20 * * *'
 
   # 也可以手动触发
   workflow_dispatch:
@@ -39,32 +39,32 @@ jobs:
           mkdir -p ~/.claude
 
           # 1. 创建 settings.json
-          cat > ~/.claude/settings.json << 'EOF'
+          cat > ~/.claude/settings.json << 'EOFINNER'
           {
             "env": {
               "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}",
               "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
             }
           }
-          EOF
+          EOFINNER
 
           # 替换环境变量
           sed -i "s|\${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|g" ~/.claude/settings.json
           sed -i "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY}|g" ~/.claude/settings.json
 
           # 2. 创建 config.json
-          cat > ~/.claude/config.json << EOF
+          cat > ~/.claude/config.json << EOFINNER
           {
             "primaryApiKey": "${ANTHROPIC_API_KEY}"
           }
-          EOF
+          EOFINNER
 
           # 3. 创建 .claude.json
-          cat > ~/.claude.json << 'EOF'
+          cat > ~/.claude.json << 'EOFINNER'
           {
             "hasCompletedOnboarding": true
           }
-          EOF
+          EOFINNER
 
           echo "✅ Claude Code 配置完成"
           echo "配置文件："
