@@ -25,14 +25,14 @@ class WeChatArticleFetcher:
         print(f"正在连接到 {self.imap_server}...")
         self.mail = imaplib.IMAP4_SSL(self.imap_server)
         self.mail.login(self.email_user, self.email_pass)
-        print("[OK] 邮箱连接成功")
+        print("✅ 邮箱连接成功")
         
     def disconnect(self):
         """断开邮箱连接"""
         if self.mail:
             self.mail.close()
             self.mail.logout()
-            print("[OK] 邮箱连接已关闭")
+            print("✅ 邮箱连接已关闭")
     
     def decode_str(self, s):
         """解码邮件头"""
@@ -91,7 +91,7 @@ class WeChatArticleFetcher:
             status, messages = self.mail.search(None, f'(SINCE {yesterday})')
             
             if status != "OK":
-                print("[ERROR] 无法搜索邮件")
+                print("❌ 无法搜索邮件")
                 return []
             
             email_ids = messages[0].split()
@@ -137,7 +137,7 @@ class WeChatArticleFetcher:
             return all_articles
             
         except Exception as e:
-            print(f"[ERROR] 获取邮件时出错: {e}")
+            print(f"❌ 获取邮件时出错: {e}")
             if self.mail:
                 self.disconnect()
             return []
@@ -167,7 +167,7 @@ class WeChatArticleFetcher:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(all_articles, f, ensure_ascii=False, indent=2)
             
-            print(f"[OK] 保存了 {len(new_articles)} 个新文章链接到 {output_file}")
+            print(f"✅ 保存了 {len(new_articles)} 个新文章链接到 {output_file}")
             print(f"📊 总共 {len(all_articles)} 个文章链接")
             
             # 也保存一个简单的链接列表
@@ -175,7 +175,7 @@ class WeChatArticleFetcher:
             with open(links_file, 'w', encoding='utf-8') as f:
                 for article in all_articles:
                     f.write(f"{article['url']}\n")
-            print(f"[OK] 同时保存链接列表到 {links_file}")
+            print(f"✅ 同时保存链接列表到 {links_file}")
         else:
             print("ℹ️  没有新的文章链接（全部已存在）")
 
@@ -186,7 +186,7 @@ def main():
     email_pass = os.environ.get("EMAIL_PASS")
     
     if not email_user or not email_pass:
-        print("[ERROR] 错误: 请设置环境变量 EMAIL_USER 和 EMAIL_PASS")
+        print("❌ 错误: 请设置环境变量 EMAIL_USER 和 EMAIL_PASS")
         print("   EMAIL_USER: 你的QQ邮箱地址")
         print("   EMAIL_PASS: QQ邮箱授权码（不是密码）")
         return 1
@@ -195,7 +195,7 @@ def main():
     print("  微信公众号文章链接提取工具")
     print("=" * 50)
     print(f"📧 邮箱: {email_user}")
-    print(f"[TIME] 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏰ 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("")
     
     fetcher = WeChatArticleFetcher(email_user, email_pass)
@@ -208,8 +208,8 @@ def main():
     
     print("")
     print("=" * 50)
-    print(f"[OK] 任务完成")
-    print(f"[TIME] 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"✅ 任务完成")
+    print(f"⏰ 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
     
     return 0
