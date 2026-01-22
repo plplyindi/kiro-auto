@@ -1,254 +1,162 @@
 name: Claude Code 技术文章分析
 
 on:
-  # 每天北京时间早上4点运行 (UTC 20:00 = 北京时间次日 04:00)
+  # 每天北京时间早上4点运行
   schedule:
     - cron: '0 20 * * *'
-
+  
   # 也可以手动触发
   workflow_dispatch:
+  
+  # 当scripts目录有新提交时触发
+  push:
+    paths:
+      - 'scripts/**'
+      - 'articles/**'
+
+# 添加权限配置
+permissions:
+  contents: write
+  actions: read
 
 jobs:
   run-claude-tasks:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0  # 获取完整历史
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 设置Git配置
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+      
       - name: 设置Python环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+      
       - name: 安装Python依赖
         run: |
-          pip install requests
-
-      - name: 从邮箱获取微信文章链接
-        env:
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        run: |
-          echo "📧 开始从QQ邮箱获取微信文章链接..."
-          python scripts/email_fetcher.py
-
-      - name: 爬取微信文章内容
-        run: |
-          echo "🕷️ 开始爬取微信文章内容..."
-          python scripts/article_scraper.py
-
+          pip install requests beautifulsoup4 lxml anthropic
+      
       - name: 检查是否有新文章
         id: check_articles
         run: |
-          if [ -f "articles_content.json" ] && [ -s "articles_content.json" ]; then
+          if [ -f "scripts/articles_"*".json" ]; then
             echo "has_articles=true" >> $GITHUB_OUTPUT
-            echo "✅ 发现文章内容"
+            echo "[OK] Found article files"
+            ls -lh scripts/articles_*.json
           else
             echo "has_articles=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  没有文章内容"
+            echo "[INFO] No article files found"
           fi
-
-      - name: 安装 Claude Code CLI
-        if: steps.check_articles.outputs.has_articles == 'true'
-        run: |
-          echo "开始安装 Claude Code CLI..."
-          curl -fsSL https://claude.ai/install.sh | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: 验证 Claude Code 安装
-        if: steps.check_articles.outputs.has_articles == 'true'
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          claude --version
-
-      - name: 配置 Claude Code
+      
+      - name: 用Claude分析文章
         if: steps.check_articles.outputs.has_articles == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         run: |
-          echo "配置 Claude Code..."
-          mkdir -p ~/.claude
+          cat > analyze.py << 'PYSCRIPT'
+import json
+import os
+from datetime import datetime
+from anthropic import Anthropic
 
-          cat > ~/.claude/settings.json << 'EOFINNER'
-          {
-            "env": {
-              "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-https://api.anthropic.com}",
-              "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
-            }
-          }
-          EOFINNER
+client = Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
 
-          sed -i "s|\${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|${ANTHROPIC_BASE_URL:-https://api.anthropic.com}|g" ~/.claude/settings.json
-          sed -i "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY}|g" ~/.claude/settings.json
+# 读取最新的文章文件
+import glob
+article_files = glob.glob('scripts/articles_*.json')
+if not article_files:
+    print("[ERROR] No article files found")
+    exit(1)
 
-          cat > ~/.claude/config.json << EOFINNER
-          {
-            "primaryApiKey": "${ANTHROPIC_API_KEY}"
-          }
-          EOFINNER
+latest_file = max(article_files, key=os.path.getmtime)
+print(f"[INFO] Analyzing: {latest_file}")
 
-          cat > ~/.claude.json << 'EOFINNER'
-          {
-            "hasCompletedOnboarding": true
-          }
-          EOFINNER
+with open(latest_file, 'r', encoding='utf-8') as f:
+    articles = json.load(f)
 
-          echo "✅ Claude Code 配置完成"
+print(f"[INFO] Found {len(articles)} articles")
 
-      - name: 用Claude分析文章（带重试）
-        if: steps.check_articles.outputs.has_articles == 'true'
-        env:
-          MAX_RETRIES: 3
-          RETRY_DELAY: 10
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
+# 构建提示词
+prompt = f"""请分析以下{len(articles)}篇微信公众号文章，生成详细的分析报告：
 
-          echo "========================================="
-          echo "   Claude Code 文章分析任务开始"
-          echo "========================================="
-          echo "北京时间: $(TZ='Asia/Shanghai' date)"
-          echo ""
+"""
 
-          # 创建分析任务提示词
-          cat > analysis_prompt.txt << 'EOFPROMPT'
-          请分析 articles_content.json 文件中的微信公众号文章，并生成一份详细的分析报告。
+for i, article in enumerate(articles, 1):
+    prompt += f"""
+## 文章{i}: {article['title']}
+作者: {article.get('author', 'Unknown')}
+链接: {article['url']}
+内容: {article['content'][:2000]}
+{'...(内容过长已截断)' if len(article['content']) > 2000 else ''}
 
-          分析要求：
-          1. 阅读所有文章内容
-          2. 总结每篇文章的核心观点和关键信息
-          3. 识别文章的主题分类（技术、产品、行业动态等）
-          4. 提取有价值的技术知识点或见解
-          5. 如果有多篇文章，找出它们之间的关联性
+"""
 
-          请将分析结果保存到 articles_analysis.md 文件中，格式如下：
+prompt += """
+请生成一份Markdown格式的分析报告，包括：
 
-          # 微信公众号文章分析报告
+1. 总体概况（文章数量、主题分布）
+2. 每篇文章的核心观点和关键信息
+3. 技术要点提取
+4. 综合洞察和建议
 
-          生成时间: [当前时间]
+请用中文回复，格式要清晰易读。
+"""
 
-          ## 📊 总体概况
-          - 文章总数
-          - 主题分布
-          - 时间跨度
+# 调用Claude API
+print("[INFO] Calling Claude API...")
+message = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=4096,
+    messages=[{"role": "user", "content": prompt}]
+)
 
-          ## 📝 文章详细分析
+analysis = message.content[0].text
+print("[OK] Analysis completed")
 
-          ### [文章标题1]
-          - 作者: 
-          - 发布时间:
-          - 主题分类:
-          - 核心观点:
-          - 关键信息:
-          - 技术要点:
+# 保存分析报告
+output_file = f"analyzed/analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+os.makedirs('analyzed', exist_ok=True)
 
-          [对每篇文章重复以上格式]
+with open(output_file, 'w', encoding='utf-8') as f:
+    f.write(f"# 微信公众号文章分析报告\n\n")
+    f.write(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+    f.write(f"**文章来源**: {latest_file}\n\n")
+    f.write("---\n\n")
+    f.write(analysis)
 
-          ## 💡 综合洞察
-          - 趋势分析
-          - 重点关注
-          - 行动建议
-
-          请开始分析。
-          EOFPROMPT
-
-          echo "📋 分析任务："
-          cat analysis_prompt.txt
-          echo ""
-          echo "========================================="
-          echo ""
-
-          RETRY_COUNT=0
-          SUCCESS=false
-
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            echo "🚀 [尝试 $RETRY_COUNT/$MAX_RETRIES]"
-            echo ""
-
-            if claude -p "$(cat analysis_prompt.txt)"; then
-              echo ""
-              echo "✅ 分析成功！"
-              SUCCESS=true
-              break
-            else
-              EXIT_CODE=$?
-              echo ""
-              echo "❌ 分析失败 (错误码: $EXIT_CODE)"
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "⏳ 等待 $RETRY_DELAY 秒后重试..."
-                sleep $RETRY_DELAY
-                echo ""
-              fi
-            fi
-          done
-
-          echo ""
-          echo "========================================="
-          if [ "$SUCCESS" = true ]; then
-            echo "   ✅ 任务完成"
-            echo "========================================="
-            exit 0
-          else
-            echo "   ❌ 任务失败（已重试 $MAX_RETRIES 次）"
-            echo "========================================="
-            exit 1
-          fi
-
-      - name: 提交分析结果到仓库
-        if: steps.check_articles.outputs.has_articles == 'true'
-        run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
+print(f"[OK] Saved to {output_file}")
+print(f"\n{analysis[:500]}...")
+PYSCRIPT
           
-          git add -A
+          python analyze.py
+      
+      - name: 提交分析结果
+        if: steps.check_articles.outputs.has_articles == 'true'
+        run: |
+          git add analyzed/
           
           if git diff --staged --quiet; then
-            echo "ℹ️  没有变化需要提交"
+            echo "[INFO] No changes to commit"
           else
-            git commit -m "📊 自动更新微信文章分析 - $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M')"
+            git commit -m "📊 自动更新文章分析 - $(date '+%Y-%m-%d %H:%M')"
             git push
-            echo "✅ 已提交分析结果到仓库"
+            echo "[OK] Analysis committed and pushed"
           fi
-
-      - name: 上传任务结果
+      
+      - name: 上传结果
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: claude-results-${{ github.run_number }}
+          name: analysis-results-${{ github.run_number }}
           path: |
-            articles_*.json
-            articles_*.md
-            articles_*.txt
-            *.log
+            analyzed/*.md
+            scripts/articles_*.json
           retention-days: 30
-
-      - name: 输出通知信息（成功）
-        if: success()
-        run: |
-          echo "✅ 微信文章分析完成！"
-          echo "运行编号: #${{ github.run_number }}"
-          echo "完成时间: $(TZ='Asia/Shanghai' date)"
-          echo ""
-          
-          if [ -f "articles_analysis.md" ]; then
-            echo "📊 生成的分析报告："
-            echo "---"
-            head -50 articles_analysis.md
-            echo "---"
-          fi
-          
-          echo ""
-          echo "🔗 查看完整结果："
-          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-      - name: 输出通知信息（失败）
-        if: failure()
-        run: |
-          echo "❌ 微信文章分析失败！"
-          echo "运行编号: #${{ github.run_number }}"
-          echo "失败时间: $(TZ='Asia/Shanghai' date)"
-          echo ""
-          echo "🔍 查看错误日志："
-          echo "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
